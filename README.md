@@ -11,17 +11,24 @@ The report is ordered by ICM created date and emailed as an HTML table to
 
 ## Report columns
 
-| Column | Source / derivation |
-|---|---|
-| ICM Number | ICM incident id (from `icm` MCP) |
-| ICM Name | Incident title |
-| Feature team ICM | The ICM owned by the two teams above |
-| WSD ICM (R-ICM) | The Release ICM linked inside the feature-team ICM |
-| ADO Task Group | Looked up from the MSRC number (from R-ICM MSRC tab) |
-| Assignee | Current owner/assignee |
-| ICM Severity | Sev 1–4 from the incident |
-| MSRC Severity | R-ICM MSRC tab; fallback = ADO task group |
-| Resolve By | R-ICM MSRC tab; fallback = Created date + SLA(severity) |
+| # | Column | Source / derivation |
+|---|---|---|
+| 1 | MSRC Number | MSRC case number (R-ICM MSRC tab, or feature-ICM summary) |
+| 2 | ICM Name | Incident title |
+| 3 | Feature team ICM | The ICM owned by the two teams — **hyperlinked** to IcM |
+| 4 | WSD ICM (R-ICM) | WSD primary Release ICM — **hyperlinked** to IcM |
+| 5 | ADO Task Group | Found via **ADO/Bluebird** by MSRC number — **hyperlinked** |
+| 6 | PR | Active/Merged PR from **ADO** — **hyperlinked** + status, else `No PR` |
+| 7 | Assignee | Current owner/assignee |
+| 8 | ICM Severity | Sev 1–4 from the incident |
+| 9 | MSRC Severity | **R-ICM MSRC tab** (fallback: ADO task group) |
+| 10 | Resolve By | **R-ICM MSRC tab** (fallback: Created date + SLA) |
+
+An **at-risk** callout is included above the table: any MSRC whose Resolve By is
+within 14 days (or overdue) **and** has no merged PR is highlighted and listed.
+
+Data source = built-in `icm` MCP; ADO task group & PRs = `ado`/`bluebird` MCP;
+email = built-in `workiq` MCP.
 
 ### Resolve-By SLA (fallback when MSRC tab not assessed)
 

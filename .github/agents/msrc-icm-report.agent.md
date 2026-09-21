@@ -4,7 +4,7 @@ description: >-
   Generates a recurring report of active MSRC ICMs owned by the Container
   Platform and Windows Server Container Networking triage teams, ordered by
   created date, and emails it as an HTML table via WorkIQ (Outlook).
-tools: ["read", "write", "edit", "bash", "icm/*", "workiq/*"]
+tools: ["read", "write", "edit", "bash", "icm/*", "workiq/*", "ado/*", "bluebird/*"]
 mcp-servers:
   icm:
     type: local
@@ -15,6 +15,16 @@ mcp-servers:
     type: local
     command: agency
     args: ["mcp", "workiq"]
+    tools: ["*"]
+  ado:
+    type: local
+    command: agency
+    args: ["mcp", "ado"]
+    tools: ["*"]
+  bluebird:
+    type: local
+    command: agency
+    args: ["mcp", "bluebird"]
     tools: ["*"]
 ---
 
@@ -37,6 +47,16 @@ repository.
 - **Sort order:** by ICM **Created date**, oldest first.
 - **Email recipient:** `ppereira@microsoft.com`
 - **Email subject:** `Active MSRC ICM Report — <YYYY-MM-DD>`
+- **IcM portal link base (for hyperlinking ICMs):**
+  `https://portal.microsofticm.com/imp/v3/incidents/details/<incidentId>/home`
+- **ADO organization / project for MSRC work items & PRs:** `microsoft` / `OS`
+  (adjust if your task groups live elsewhere). Build work-item links as
+  `https://dev.azure.com/microsoft/OS/_workitems/edit/<id>` and prefer any URL
+  returned directly by the ADO MCP.
+- **"Nearing due" (at-risk) rule:** an MSRC is **at risk** when its Resolve By
+  date is **within 14 days** (or already past) **AND** it has **no merged/
+  completed PR**. Highlight at-risk rows and list them in a summary above the
+  table.
 - **MSRC severity → "Resolve By" SLA (days from ICM Created date).** Used ONLY
   when the R-ICM MSRC tab has no assessed Resolve-By date. Source of truth:
   `MSRC-Responsibilities.md` (MSRC SLAs). SLA days are counted from the case
@@ -65,88 +85,110 @@ incident.
 
 ## Step-by-step procedure
 
-1. **Discover the ICM tools.** List the tools exposed by the `icm` MCP server
-   and pick the ones for searching/querying incidents and reading incident
-   details (including related/linked incidents and any MSRC fields). Prefer a
-   query/search tool that supports filtering by owning team and state.
+1. **Discover the tools.** List the tools exposed by the `icm` MCP (incident
+   search/details, related incidents, contacts) and by the `ado` / `bluebird`
+   MCPs (work-item and pull-request search). Pick the query/search tools that
+   support filtering by owning team, state, and text (MSRC number).
 
 2. **Find the feature-team ICMs.** Query for active incidents owned by each of
    the two teams in the Configuration section. These are the **Feature team
    ICMs** — the primary rows of the report. De-duplicate by ICM number and keep
    only active ones.
 
-3. **For each feature-team ICM, gather its fields:**
-   - **ICM Number** — the incident id.
+3. **For each feature-team ICM, gather its base fields:**
+   - **ICM Number** — the feature-team incident id (used to build its hyperlink;
+     it is NOT a report column by itself anymore).
    - **ICM Name** — the incident title.
-   - **Feature team ICM** — the feature-team incident id (same as ICM Number for
-     the primary row; include it explicitly because the report distinguishes it
-     from the R-ICM).
-   - **WSD ICM (R-ICM)** — the **WSD primary R-ICM**. When an MSRC case is
-     reported the MSRC team creates **two R-ICMs**: one assigned to **WSD**
-     (primary) and one to **PET** (secondary). Use the WSD one. Find it in the
-     feature-team ICM's linked/related incidents, parent incident, or body. If
-     none is linked, `N/A`.
+   - **MSRC Number** — the MSRC case number. Read it from the R-ICM MSRC tab when
+     accessible, otherwise from the feature-team ICM summary/tags (feature ICMs
+     name their originating MSRC case). This is the report's **first column**.
+   - **Feature team ICM** — the feature-team incident id, rendered as a
+     **hyperlink** using the IcM portal link base.
+   - **WSD ICM (R-ICM)** — the **WSD primary R-ICM**, rendered as a **hyperlink**
+     using the IcM portal link base. When an MSRC case is reported the MSRC team
+     creates **two R-ICMs**: one assigned to **WSD** (primary) and one to **PET**
+     (secondary). Use the WSD one. Find it in the feature-team ICM's
+     linked/related incidents, parent incident, or body. If none is linked, `N/A`.
    - **Assignee** — the current owner/assignee of the feature-team ICM.
    - **ICM Severity** — the incident severity (e.g., Sev 1–4).
 
-4. **Read the R-ICM (WSD ICM) for MSRC data.** When an R-ICM exists, open it and
-   read its **MSRC tab**:
-   - **MSRC severity** — take the assessed MSRC severity (Critical / Important /
+4. **Read the R-ICM (WSD ICM) → MSRC tab for the authoritative MSRC fields.**
+   Open the WSD R-ICM and read its **MSRC tab**:
+   - **MSRC Severity** — the assessed MSRC severity (Critical / Important /
      Moderate / Low) from the R-ICM MSRC tab.
-   - **Resolve By date** — take the assessed Resolve-By date from the MSRC tab.
-   - Also read the **MSRC number** from the R-ICM MSRC tab (needed for the ADO
-     task group lookup).
+   - **Resolve By** — the assessed Resolve-By date from the R-ICM MSRC tab.
+   - **MSRC Number** — confirm the MSRC case number here (needed for ADO lookups).
+   If the R-ICM returns Access Denied, mark these cells `R-ICM access denied`.
 
-5. **ADO task group (based on MSRC number).** Using the MSRC number from the
-   R-ICM, resolve the associated **ADO task group** via the `icm` MCP (or any
-   MSRC/ADO linkage it exposes). If it cannot be resolved from the available
-   tools, set the cell to `N/A (ADO)` and continue — do not guess.
+5. **ADO Task Group (via ADO/Bluebird, searched by MSRC number).** Do NOT rely
+   on any ICM custom field for this. Use the **`ado`** MCP (preferred) or
+   **`bluebird`** MCP to search the `microsoft/OS` project for the MSRC number
+   (e.g. search work items for `MSRC<number>` / `MSRC-<number>`) and locate the
+   **MSRC Task Group** work item. Capture its id and URL and render the cell as a
+   **hyperlink**. If it cannot be found, set `N/A (ADO)` — do not guess.
 
-6. **Fallbacks when the MSRC tab is NOT assessed:**
+6. **PR details (via ADO, by MSRC number / task group).** Using the `ado` MCP,
+   find pull requests associated with the MSRC — via the task group work item and
+   its child bugs' linked PRs, or by searching PRs referencing the MSRC number.
+   - Prefer a **Merged/Completed** PR; otherwise show the most recent **Active**
+     PR; if none exists, put `No PR`.
+   - Render the PR cell as a **hyperlink** to the PR (use the URL from ADO) with
+     its status, e.g. `!12345 (Merged)` / `!12345 (Active)`.
+
+7. **Fallbacks when the MSRC tab is NOT assessed:**
    - **MSRC severity fallback:** if the R-ICM MSRC tab has no assessed severity,
-     derive it from the **ADO task group** (the MSRC number's task group). If
-     still unknown, `N/A`.
+     derive it from the ADO task group. If still unknown, `N/A`.
    - **Resolve By fallback:** if the MSRC tab has no assessed Resolve-By date,
      compute it from the MSRC severity using the SLA table in Configuration:
      `Resolve By = Created date + SLA(severity days)`. Show the computed date and
      mark it, e.g. `2026-11-05 (computed)`. If severity is unknown, `N/A`.
 
-7. **Order** the collected rows by **Created date, oldest first**.
+8. **Compute the at-risk flag.** For each row, mark it **AT RISK** when the
+   Resolve By date is within **14 days** or already past **AND** there is no
+   Merged/Completed PR (per the Configuration rule).
 
-8. **Build the HTML report.** Produce a single self-contained HTML email body
-   with:
-   - A short heading: `Active MSRC ICM Report` and the generation date, plus the
-     total incident count and a one-line note that the two owning teams are in
-     scope.
-   - A styled `<table>` (borders, header row shading, zebra striping) with these
-     columns **in this exact order**:
-     1. ICM Number
-     2. ICM Name
-     3. Feature team ICM
-     4. WSD ICM (R-ICM)
-     5. ADO Task Group
-     6. Assignee
-     7. ICM Severity
-     8. MSRC Severity
-     9. Resolve By
-   - Keep the HTML inline-styled (no external CSS/JS) so it renders in Outlook.
-   - If there are zero active incidents, still send the email with the heading
-     and a line stating "No active MSRC ICMs for the in-scope teams."
+9. **Order** the collected rows by **Created date, oldest first**.
 
-9. **Send the email via WorkIQ.** Use the `workiq` MCP mail/send capability to
-   send an email:
-   - To: `ppereira@microsoft.com`
-   - Subject: `Active MSRC ICM Report — <today's date>`
-   - Body: the HTML table from step 8 (send as HTML, not plain text).
+10. **Build the HTML report.** Produce a single self-contained, inline-styled
+    HTML email body (no external CSS/JS so it renders in Outlook) with:
+    - A short heading: `Active MSRC ICM Report` + the generation date, the total
+      incident count, and a one-line note that the two owning teams are in scope.
+    - An **At-risk summary block** directly under the heading: a bulleted list of
+      every AT-RISK MSRC (MSRC number, Resolve By, days remaining/overdue, and PR
+      status). If none are at risk, state
+      `No MSRCs are nearing their Resolve By without a merged PR.`
+    - A styled `<table>` (borders, header shading, zebra striping; at-risk rows
+      highlighted with an amber/red background) with these columns **in this
+      exact order**:
+      1. MSRC Number
+      2. ICM Name
+      3. Feature team ICM *(hyperlink)*
+      4. WSD ICM (R-ICM) *(hyperlink)*
+      5. ADO Task Group *(hyperlink)*
+      6. PR *(hyperlink + status)*
+      7. Assignee
+      8. ICM Severity
+      9. MSRC Severity *(from R-ICM MSRC tab)*
+      10. Resolve By *(from R-ICM MSRC tab)*
+    - All hyperlinks must be real `<a href>` anchors.
+    - If there are zero active incidents, still send the email with the heading
+      and a line stating "No active MSRC ICMs for the in-scope teams."
 
-10. **Confirm.** After sending, print a concise summary to stdout: the recipient,
-    subject, number of incidents included, and any fields that came back as
-    `N/A` so gaps are visible in the run log.
+11. **Send the email via WorkIQ.** Use the `workiq` MCP mail/send capability:
+    - To: `ppereira@microsoft.com`
+    - Subject: `Active MSRC ICM Report — <today's date>`
+    - Body: the HTML from step 10 (send as HTML, not plain text).
+
+12. **Confirm.** After sending, print a concise summary to stdout: recipient,
+    subject, number of incidents included, the count of AT-RISK MSRCs, and any
+    fields that came back as `N/A` / access-denied so gaps are visible in the log.
 
 ## Notes
 
 - This agent is designed to run on a cadence (see the repo's
   `.azuredevops/policies/agency-schedule.yml`). When dispatched on a schedule it
   runs with no interactive input, so rely only on the Configuration above.
-- Be resilient to differences in the exact `icm` tool names/schemas — inspect the
-  available tools at runtime and adapt. Prefer fewer, targeted queries.
+- Be resilient to differences in the exact `icm` / `ado` / `bluebird` tool
+  names/schemas — inspect the available tools at runtime and adapt. Prefer
+  fewer, targeted queries, and reuse the ADO task-group result to find its
+  child bugs and their linked PRs.
