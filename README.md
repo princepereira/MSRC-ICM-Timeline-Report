@@ -23,12 +23,17 @@ The report is ordered by ICM created date and emailed as an HTML table to
 | 8 | Feature team ICM | ICM owned by the two teams — **hyperlinked** to IcM |
 | 9 | WSD ICM | WSD primary Release ICM — **hyperlinked** to IcM |
 | 10 | PR & Status | Active/Completed PR from **ADO** (via child bugs) — **hyperlinked**, else `No PR` |
+| 11 | Teams Chat | Per-MSRC Teams group chat from **WorkIQ** (`/me/chats` topic match) — **hyperlinked**, else `No chat` |
 
 Any MSRC that is **overdue or due within 14 days** has its **entire row marked
 red** and is listed in an overdue/nearing-due callout above the table.
 
 Data source = built-in `icm` MCP; ADO task group & PRs = `ado`/`bluebird` MCP;
-email = built-in `workiq` MCP.
+Teams chat & email = built-in `workiq` MCP.
+
+> The Teams Chat column populates only for MSRCs whose group chat the **running
+> identity is a member of** (WorkIQ sees the signed-in user's chats). Fine for a
+> personal run; for a cloud schedule it must run under a member identity.
 
 ### Resolve-By SLA (fallback when MSRC tab not assessed)
 

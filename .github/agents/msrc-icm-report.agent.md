@@ -153,7 +153,18 @@ incident.
      `!16816197 (Active)` or `!16703358 (Completed)`; if several PRs exist append
      `+N`. If none are found anywhere, `No PR`.
 
-7. **Fallbacks when the MSRC tab is NOT assessed:**
+7. **Teams chat link (via WorkIQ).** Per `MSRC-Responsibilities.md`, the WSD dev
+   creates a **Teams group chat** to discuss each MSRC; its topic starts with
+   `MSRC <number>`. Find it with WorkIQ: list `/me/chats?$select=id,topic,
+   chatType,webUrl&$top=50` (follow `@odata.nextLink` to page through all chats)
+   and match a **group** chat whose `topic` contains the MSRC number. Use its
+   `webUrl` as the **Teams Chat** hyperlink. If several match (e.g. severity
+   variants), prefer the most recently active group chat. If none is found,
+   `No chat`.
+   - Note: WorkIQ only sees chats the **running identity is a member of**, so this
+     column populates when the report runs as a member of those chats.
+
+8. **Fallbacks when the MSRC tab is NOT assessed:**
    - **MSRC severity fallback:** if the R-ICM MSRC tab has no assessed severity,
      derive it from the ADO task group. If still unknown, `N/A`.
    - **Resolve By fallback:** if the MSRC tab has no assessed Resolve-By date,
@@ -161,13 +172,13 @@ incident.
      `Resolve By = Created date + SLA(severity days)`. Show the computed date and
      mark it, e.g. `2026-11-05 (computed)`. If severity is unknown, `N/A`.
 
-8. **Compute the RED flag.** Mark a row RED when its Resolve By date is **overdue
+9. **Compute the RED flag.** Mark a row RED when its Resolve By date is **overdue
    (before today)** OR **less than 14 days away** — based purely on the Resolve By
    date, regardless of PR status.
 
-9. **Order** the collected rows by **Created date, oldest first**.
+10. **Order** the collected rows by **Created date, oldest first**.
 
-10. **Build the HTML report.** Produce a single self-contained, inline-styled
+11. **Build the HTML report.** Produce a single self-contained, inline-styled
     HTML email body (no external CSS/JS so it renders in Outlook) with:
     - A short heading: `Active MSRC ICM Report` + the generation date, the total
       incident count, and a one-line note that the two owning teams are in scope.
@@ -188,16 +199,17 @@ incident.
       8. Feature team ICM *(hyperlink → IcM)*
       9. WSD ICM *(hyperlink → IcM)*
       10. PR & Status *(hyperlink)*
+      11. Teams Chat *(hyperlink → Teams group chat)*
     - All hyperlinks must be real `<a href>` anchors.
     - If there are zero active incidents, still send the email with the heading
       and a line stating "No active MSRC ICMs for the in-scope teams."
 
-11. **Send the email via WorkIQ.** Use the `workiq` MCP mail/send capability:
+12. **Send the email via WorkIQ.** Use the `workiq` MCP mail/send capability:
     - To: `ppereira@microsoft.com`
     - Subject: `Active MSRC ICM Report — <today's date>`
-    - Body: the HTML from step 10 (send as HTML, not plain text).
+    - Body: the HTML from step 11 (send as HTML, not plain text).
 
-12. **Confirm.** After sending, print a concise summary to stdout: recipient,
+13. **Confirm.** After sending, print a concise summary to stdout: recipient,
     subject, number of incidents included, the count of RED (overdue/nearing-due)
     MSRCs, and any fields that came back as `N/A` / access-denied so gaps are
     visible in the log.
