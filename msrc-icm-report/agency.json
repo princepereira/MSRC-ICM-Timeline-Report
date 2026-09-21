@@ -1,0 +1,7 @@
+{
+  "$schema": "https://raw.githubusercontent.com/agency-microsoft/.github-private/main/agency.schema.json",
+  "authors": [{ "name": "Prince Pereira", "email": "ppereira@microsoft.com" }],
+  "engines": ["copilot"],
+  "category": "developer-tools",
+  "platforms": ["windows", "linux", "macos"]
+}

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "msrc-icm-report",
+  "version": "1.0.0",
+  "description": "Generates a recurring report of active MSRC ICMs owned by the Container Platform and Windows Server Container Networking triage teams, ordered by created date, and emails it as an HTML table via WorkIQ (Outlook).",
+  "author": { "name": "Prince Pereira", "email": "ppereira@microsoft.com" },
+  "keywords": ["msrc", "icm", "security", "report", "windows-server", "container-networking"]
+}
