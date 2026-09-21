@@ -53,10 +53,10 @@ repository.
   (adjust if your task groups live elsewhere). Build work-item links as
   `https://dev.azure.com/microsoft/OS/_workitems/edit/<id>` and prefer any URL
   returned directly by the ADO MCP.
-- **"Nearing due" (at-risk) rule:** an MSRC is **at risk** when its Resolve By
-  date is **within 14 days** (or already past) **AND** it has **no merged/
-  completed PR**. Highlight at-risk rows and list them in a summary above the
-  table.
+- **Overdue / nearing-due (RED row) rule:** mark the **entire row red** when the
+  Resolve By date is **overdue (past today)** OR **less than 14 days away**. This
+  is based purely on the Resolve By date (independent of PR status). Also list
+  these MSRCs in a summary above the table.
 - **MSRC severity → "Resolve By" SLA (days from ICM Created date).** Used ONLY
   when the R-ICM MSRC tab has no assessed Resolve-By date. Source of truth:
   `MSRC-Responsibilities.md` (MSRC SLAs). SLA days are counted from the case
@@ -130,19 +130,28 @@ incident.
    - `Custom.OriginalSLADate` (or `DueDate`) → **Resolve By**
    - `System.State` → fix progress (Proposed / Started / Committed / Resolved / Cut)
    Prefer one batch WIQL to get all task-group ids, then one `get_batch` for the
-   fields above. Render the Task Group cell as a **hyperlink**
-   (`https://dev.azure.com/microsoft/OS/_workitems/edit/<id>`). If no task group
-   is found, `N/A (ADO)`.
+   fields above. The task-group work-item URL
+   (`https://dev.azure.com/microsoft/OS/_workitems/edit/<id>`) is the
+   **hyperlink target for the MSRC Number column** — there is no separate Task
+   Group column. If no task group is found, MSRC Number stays unlinked and
+   MSRC-tab cells are `N/A (ADO)`.
 
-6. **PR details (via ADO).** PRs attach **directly to the task-group work item**
-   as `ArtifactLink` relations of type "Pull Request" (repo GUID + PR id in the
-   `vstfs:///Git/PullRequestId/...` url). Fetch relations (`expand: Relations`)
-   for task groups first in states that carry PRs — **Committed / Resolved /
-   Started** — since Proposed/Cut generally have none. For each PR, resolve its
-   status via `repo_pull_request get`.
-   - Prefer a **Completed/Merged** PR; else the most recent **Active** PR; else
-     `No PR`.
-   - Render as a **hyperlink** with status, e.g. `!16699974 (Merged)`.
+6. **PR details (via ADO) — search by MSRC number, traverse child bugs.** PRs
+   usually attach to the **child AB/GE/BR/LT bug**, NOT the task group, and can
+   exist even when the task group is `Proposed`. Do **not** gate PR discovery on
+   task-group state. For each MSRC:
+   - Enumerate the MSRC's work items: `search_workitem` (or WIQL) for
+     `MSRC <number>` / `MSRC<number>` in `microsoft/OS` to get the task group
+     **and its child bugs** (titles look like `[MSRC <number>][AB]`, `[GE]`,
+     `[BR]`, `[LT]`).
+   - `get_batch` those work items with `expand: Relations` and collect **every**
+     `ArtifactLink` relation of type "Pull Request"
+     (`vstfs:///Git/PullRequestId/<projGuid>/<repoGuid>/<prId>`).
+   - Resolve each PR's status with `repo_pull_request get` (repos such as
+     `os.2020`).
+   - Report the most recent PR as a **hyperlink** with status, e.g.
+     `!16816197 (Active)` or `!16703358 (Completed)`; if several PRs exist append
+     `+N`. If none are found anywhere, `No PR`.
 
 7. **Fallbacks when the MSRC tab is NOT assessed:**
    - **MSRC severity fallback:** if the R-ICM MSRC tab has no assessed severity,
@@ -152,9 +161,9 @@ incident.
      `Resolve By = Created date + SLA(severity days)`. Show the computed date and
      mark it, e.g. `2026-11-05 (computed)`. If severity is unknown, `N/A`.
 
-8. **Compute the at-risk flag.** For each row, mark it **AT RISK** when the
-   Resolve By date is within **14 days** or already past **AND** there is no
-   Merged/Completed PR (per the Configuration rule).
+8. **Compute the RED flag.** Mark a row RED when its Resolve By date is **overdue
+   (before today)** OR **less than 14 days away** — based purely on the Resolve By
+   date, regardless of PR status.
 
 9. **Order** the collected rows by **Created date, oldest first**.
 
@@ -162,23 +171,23 @@ incident.
     HTML email body (no external CSS/JS so it renders in Outlook) with:
     - A short heading: `Active MSRC ICM Report` + the generation date, the total
       incident count, and a one-line note that the two owning teams are in scope.
-    - An **At-risk summary block** directly under the heading: a bulleted list of
-      every AT-RISK MSRC (MSRC number, Resolve By, days remaining/overdue, and PR
-      status). If none are at risk, state
-      `No MSRCs are nearing their Resolve By without a merged PR.`
-    - A styled `<table>` (borders, header shading, zebra striping; at-risk rows
-      highlighted with an amber/red background) with these columns **in this
-      exact order**:
-      1. MSRC Number
-      2. ICM Name
-      3. Feature team ICM *(hyperlink)*
-      4. WSD ICM (R-ICM) *(hyperlink)*
-      5. ADO Task Group *(hyperlink)*
-      6. PR *(hyperlink + status)*
-      7. Assignee
-      8. ICM Severity
-      9. MSRC Severity *(from R-ICM MSRC tab)*
-      10. Resolve By *(from R-ICM MSRC tab)*
+    - An **Overdue / nearing-due summary block** directly under the heading: a
+      bulleted list of every RED MSRC (MSRC number, Resolve By, days
+      remaining/overdue, and PR status). If none, state
+      `No MSRCs are overdue or due within 14 days.`
+    - A styled `<table>` (borders, header shading, zebra striping; **RED rows get
+      a red background** and stay legible) with these columns **in this exact
+      order**:
+      1. MSRC Number *(hyperlink → ADO task group)*
+      2. Created Date
+      3. Resolve By
+      4. Severity *(MSRC severity, from R-ICM MSRC tab / ADO task group)*
+      5. ICM Severity
+      6. Assignee
+      7. ICM Name
+      8. Feature team ICM *(hyperlink → IcM)*
+      9. WSD ICM *(hyperlink → IcM)*
+      10. PR & Status *(hyperlink)*
     - All hyperlinks must be real `<a href>` anchors.
     - If there are zero active incidents, still send the email with the heading
       and a line stating "No active MSRC ICMs for the in-scope teams."
@@ -189,8 +198,9 @@ incident.
     - Body: the HTML from step 10 (send as HTML, not plain text).
 
 12. **Confirm.** After sending, print a concise summary to stdout: recipient,
-    subject, number of incidents included, the count of AT-RISK MSRCs, and any
-    fields that came back as `N/A` / access-denied so gaps are visible in the log.
+    subject, number of incidents included, the count of RED (overdue/nearing-due)
+    MSRCs, and any fields that came back as `N/A` / access-denied so gaps are
+    visible in the log.
 
 ## Notes
 
