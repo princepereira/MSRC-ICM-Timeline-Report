@@ -120,20 +120,29 @@ incident.
    - **MSRC Number** — confirm the MSRC case number here (needed for ADO lookups).
    If the R-ICM returns Access Denied, mark these cells `R-ICM access denied`.
 
-5. **ADO Task Group (via ADO/Bluebird, searched by MSRC number).** Do NOT rely
-   on any ICM custom field for this. Use the **`ado`** MCP (preferred) or
-   **`bluebird`** MCP to search the `microsoft/OS` project for the MSRC number
-   (e.g. search work items for `MSRC<number>` / `MSRC-<number>`) and locate the
-   **MSRC Task Group** work item. Capture its id and URL and render the cell as a
-   **hyperlink**. If it cannot be found, set `N/A (ADO)` — do not guess.
+5. **ADO Task Group + MSRC-tab data (via ADO, by MSRC number).** The **ADO Task
+   Group work item is the authoritative, non-ACL-restricted source** for the MSRC
+   tab — use it even when the WSD R-ICM is access-denied. In `microsoft/OS`, find
+   the task group for each MSRC (WIQL/search on the case id). Validated field
+   mapping on the task-group work item:
+   - `OSG.CaseID` → **MSRC Number**
+   - Tag `MSRC SDL Severity: <Critical|Important|Moderate|Low>` → **MSRC Severity**
+   - `Custom.OriginalSLADate` (or `DueDate`) → **Resolve By**
+   - `System.State` → fix progress (Proposed / Started / Committed / Resolved / Cut)
+   Prefer one batch WIQL to get all task-group ids, then one `get_batch` for the
+   fields above. Render the Task Group cell as a **hyperlink**
+   (`https://dev.azure.com/microsoft/OS/_workitems/edit/<id>`). If no task group
+   is found, `N/A (ADO)`.
 
-6. **PR details (via ADO, by MSRC number / task group).** Using the `ado` MCP,
-   find pull requests associated with the MSRC — via the task group work item and
-   its child bugs' linked PRs, or by searching PRs referencing the MSRC number.
-   - Prefer a **Merged/Completed** PR; otherwise show the most recent **Active**
-     PR; if none exists, put `No PR`.
-   - Render the PR cell as a **hyperlink** to the PR (use the URL from ADO) with
-     its status, e.g. `!12345 (Merged)` / `!12345 (Active)`.
+6. **PR details (via ADO).** PRs attach **directly to the task-group work item**
+   as `ArtifactLink` relations of type "Pull Request" (repo GUID + PR id in the
+   `vstfs:///Git/PullRequestId/...` url). Fetch relations (`expand: Relations`)
+   for task groups first in states that carry PRs — **Committed / Resolved /
+   Started** — since Proposed/Cut generally have none. For each PR, resolve its
+   status via `repo_pull_request get`.
+   - Prefer a **Completed/Merged** PR; else the most recent **Active** PR; else
+     `No PR`.
+   - Render as a **hyperlink** with status, e.g. `!16699974 (Merged)`.
 
 7. **Fallbacks when the MSRC tab is NOT assessed:**
    - **MSRC severity fallback:** if the R-ICM MSRC tab has no assessed severity,
@@ -192,3 +201,8 @@ incident.
   names/schemas — inspect the available tools at runtime and adapt. Prefer
   fewer, targeted queries, and reuse the ADO task-group result to find its
   child bugs and their linked PRs.
+- **Do not depend on a shell** — a scheduled run may not expose `bash`/
+  PowerShell. Parse large tool outputs by reading the saved temp file, and use
+  batch ADO calls (`wit_query` WIQL → `wit_work_item get_batch`) plus the
+  session `sql` tool to hold/track the 20–30 rows instead of shell scripting.
+  This also keeps the run fast.
