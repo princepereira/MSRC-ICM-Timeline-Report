@@ -50,8 +50,18 @@ repository.
 
 ICM/MSRC data must come from the `icm` MCP tools. If a value cannot be
 determined, put the literal text `N/A` (or a short reason such as
-`Not assessed`) in that cell — never invent an ICM number, MSRC number,
-severity, assignee, or date.
+`Not assessed` or `R-ICM access denied`) in that cell — never invent an ICM
+number, MSRC number, severity, assignee, or date.
+
+## Completeness (required)
+
+Enrich **every** in-scope incident — never sample, cap, or leave rows as
+"pending" to save context. For each feature-team ICM you must fetch its WSD
+R-ICM and read the MSRC-tab fields. When a tool result is too large to read
+inline, it is saved to a temp file — read that file to extract fields. If an
+R-ICM returns Access Denied, mark its MSRC-tab cells `R-ICM access denied` and
+continue. The report must contain a fully-populated row for every active MSRC
+incident.
 
 ## Step-by-step procedure
 
