@@ -83,6 +83,40 @@ R-ICM returns Access Denied, mark its MSRC-tab cells `R-ICM access denied` and
 continue. The report must contain a fully-populated row for every active MSRC
 incident.
 
+### Enrichment tracking gate (mandatory — prevents partial PR/Teams columns)
+
+The most common failure is emailing a report where **PR & Status** and **Teams
+Chat** are filled for only a handful of rows because the per-row enrichment was
+skipped, truncated, or abandoned mid-run to save context. To make this
+impossible, you must track enrichment state in the session `sql` store and refuse
+to build the report until every row is resolved:
+
+1. Immediately after discovering the in-scope feature-team ICMs (step 2), create
+   a tracking table and insert **one row per MSRC** with enrichment columns
+   defaulted to `pending`:
+   ```sql
+   CREATE TABLE IF NOT EXISTS msrc_rows (
+     msrc TEXT PRIMARY KEY, icm_id TEXT, created TEXT, resolve_by TEXT,
+     msrc_sev TEXT, icm_sev TEXT, assignee TEXT, icm_name TEXT,
+     wsd_icm TEXT, taskgroup_id TEXT,
+     pr_status TEXT DEFAULT 'pending',   -- 'pending' until PR search finished
+     chat_status TEXT DEFAULT 'pending', -- 'pending' until chat match finished
+     pr_cell TEXT, chat_cell TEXT
+   );
+   ```
+2. As you enrich each MSRC, `UPDATE` its row and set `pr_status`/`chat_status` to
+   a **terminal** value — never leave them `pending`:
+   - `pr_status`: `'done'` once PR relations were parsed (even if the final
+     `pr_cell` is `No PR`), or `'error:<reason>'` if a tool call failed.
+   - `chat_status`: `'done'` once the full chat list was searched (even if
+     `chat_cell` is `No chat`), or `'error:<reason>'`.
+3. **Verification gate before step 11:** run
+   `SELECT msrc FROM msrc_rows WHERE pr_status='pending' OR chat_status='pending';`
+   If this returns **any** rows, you are not done — go back and enrich those
+   specific MSRCs. Only when the query returns **zero** rows may you build and
+   send the report. `No PR` / `No chat` are valid terminal results; `pending` is
+   not. Include the count of `error:*` rows in the final step-13 summary.
+
 ## Step-by-step procedure
 
 1. **Discover the tools.** List the tools exposed by the `icm` MCP (incident
@@ -144,23 +178,61 @@ incident.
      `MSRC <number>` / `MSRC<number>` in `microsoft/OS` to get the task group
      **and its child bugs** (titles look like `[MSRC <number>][AB]`, `[GE]`,
      `[BR]`, `[LT]`).
-   - `get_batch` those work items with `expand: Relations` and collect **every**
-     `ArtifactLink` relation of type "Pull Request"
-     (`vstfs:///Git/PullRequestId/<projGuid>/<repoGuid>/<prId>`).
-   - Resolve each PR's status with `repo_pull_request get` (repos such as
-     `os.2020`).
+   - `get_batch` those work items with the ADO `wit_work_item` tool
+     (`action: get_batch`, `expand: Relations`). **Do not also pass `fields`** —
+     supplying `fields` suppresses the `relations` array, so the PR links never
+     appear. Then collect **every** relation whose `rel` is `ArtifactLink` and
+     whose `attributes.name` is `Pull Request`.
+   - **Parse the PR artifact URL correctly.** The relation `url` looks like
+     `vstfs:///Git/PullRequestId/<projectGuid>%2F<repoGuid>%2F<prId>` — the three
+     IDs are joined by **URL-encoded** slashes (`%2F`/`%2f`), **not** literal `/`.
+     URL-decode (or split on `%2F`/`%2f`, case-insensitive) to extract
+     `projectGuid`, `repoGuid`, and the numeric `prId`. Splitting on a raw `/`
+     leaves the GUIDs+id as one blob and fails to find `prId` — this is the usual
+     reason PR status comes back empty.
+   - Resolve each PR with the ADO `repo_pull_request` tool (`action: get`),
+     passing `orgName: microsoft`, `project: <projectGuid>`,
+     `repositoryId: <repoGuid>`, and `pullRequestId: <prId>` taken straight from
+     the parsed artifact URL. Use those GUIDs directly — do **not** try to map
+     them to a repo name such as `os.2020` first. Read `status` from the result
+     (`Active` / `Completed` / `Abandoned`) and build the PR link from the
+     returned `repository.webUrl` + `/pullrequest/<prId>`.
    - Report the most recent PR as a **hyperlink** with status, e.g.
-     `!16816197 (Active)` or `!16703358 (Completed)`; if several PRs exist append
+     `!17045092 (Active)` or `!16703358 (Completed)`; if several PRs exist append
      `+N`. If none are found anywhere, `No PR`.
+   - You must run this PR search for **every** MSRC row — iterate the full
+     `msrc_rows` set, and after each one set `pr_status='done'` (even when the
+     result is `No PR`) or `pr_status='error:<reason>'`. Never leave an MSRC at
+     `pending` because the list was long.
 
 7. **Teams chat link (via WorkIQ).** Per `MSRC-Responsibilities.md`, the WSD dev
-   creates a **Teams group chat** to discuss each MSRC; its topic starts with
-   `MSRC <number>`. Find it with WorkIQ: list `/me/chats?$select=id,topic,
-   chatType,webUrl&$top=50` (follow `@odata.nextLink` to page through all chats)
-   and match a **group** chat whose `topic` contains the MSRC number. Use its
-   `webUrl` as the **Teams Chat** hyperlink. If several match (e.g. severity
-   variants), prefer the most recently active group chat. If none is found,
-   `No chat`.
+   creates a **Teams group chat** to discuss each MSRC. To avoid filling this
+   column for only a few rows, fetch the chat list **once up front** and cache it,
+   then match every MSRC against the cache:
+   - **Fetch all chats once into a cache.** Call the WorkIQ `fetch` tool on
+     `/me/chats?$select=id,topic,chatType,webUrl&$top=50` and persist each group
+     chat into the session `sql` store
+     (`CREATE TABLE chats(topic TEXT, weburl TEXT, chat_type TEXT, digits TEXT);`
+     where `digits` is the topic with all non-digit characters stripped). Reuse
+     this one cache for **all** MSRCs — do not re-fetch the chat list per MSRC.
+   - **Paging:** the response returns `@odata.nextLink` as an **absolute**
+     `https://graph.microsoft.com/v1.0/me/chats?...&$skiptoken=...` URL, but the
+     WorkIQ `fetch` tool only accepts **relative** paths. Strip the
+     `https://graph.microsoft.com/v1.0` prefix and pass the remaining
+     `/me/chats?...` path back to `fetch`; **keep paging until there is no
+     `@odata.nextLink`** before you start matching — stopping early is a top
+     reason only a few chats are found.
+   - **Matching:** topics appear in several formats — `MSRC <number> - ...`,
+     `[MSRC] [<number>] - ...`, and sometimes `MSRC<number>`. Do **not** require
+     the topic to *start with* `MSRC <number>`. Instead select a **group** chat
+     (`chatType == "group"`) whose `topic` **contains the MSRC number** — compare
+     after stripping brackets/spaces so the digits `<number>` match anywhere in
+     the topic (e.g. `SELECT weburl FROM chats WHERE chat_type='group' AND
+     digits LIKE '%'||:msrc||'%'`). Use its `webUrl` as the **Teams Chat**
+     hyperlink. If several match (e.g. severity variants), prefer the most
+     recently active group chat. If none is found, set `chat_cell='No chat'`.
+   - After matching, set the row's `chat_status='done'` in `msrc_rows` (see the
+     tracking gate) for **every** MSRC, including the `No chat` ones.
    - Note: WorkIQ only sees chats the **running identity is a member of**, so this
      column populates when the report runs as a member of those chats.
 
@@ -178,7 +250,10 @@ incident.
 
 10. **Order** the collected rows by **Created date, oldest first**.
 
-11. **Build the HTML report.** Produce a single self-contained, inline-styled
+11. **Build the HTML report.** First enforce the **enrichment tracking gate**:
+    run `SELECT msrc FROM msrc_rows WHERE pr_status='pending' OR
+    chat_status='pending';` and do not proceed while it returns any rows. Then
+    produce a single self-contained, inline-styled
     HTML email body (no external CSS/JS so it renders in Outlook) with:
     - A short heading: `Active MSRC ICM Report` + the generation date, the total
       incident count, and a one-line note that the two owning teams are in scope.
